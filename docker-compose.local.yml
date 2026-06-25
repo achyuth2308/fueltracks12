@@ -1,0 +1,84 @@
+# ============================================================
+# FuelTracks — Local Development Stack
+# ============================================================
+# Spins up Postgres 16 + TimescaleDB + Redis 7 + the three app
+# processes for local development. NOT for production use —
+# production runs on a hardened EC2 with PM2 (see DEPLOY.md).
+#
+# Prerequisites:
+#   - Docker + Docker Compose v2
+#   - 4 GB RAM free
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml up -d
+#   # wait for healthy
+#   docker compose -f docker-compose.local.yml logs -f timescale
+#
+#   # Initialize DB (one-time)
+#   npm install --legacy-peer-deps
+#   node scripts/dbInit.js
+#   node scripts/runMigrations.js
+#
+#   # Start the app (in another terminal)
+#   npm run start:tcp      # tcp-server on :5000/5001/5002
+#   npm run start:api      # backend on :3001
+#   cd frontend && npm install --legacy-peer-deps && npm run dev
+#                         # vite dev server on :5173
+#
+#   # Smoke test
+#   node scripts/smoke-test.js
+# ============================================================
+
+services:
+  timescale:
+    image: timescale/timescaledb:2.16.1-pg16
+    container_name: fueltracks-timescale
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fueltracks
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fueltracks"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: fueltracks-redis
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # OPTIONAL: run the app processes inside Docker too.
+  # Comment out if you prefer to run them on the host (faster
+  # for development — npm run dev:api, npm run dev:tcp, etc.)
+  #
+  # api:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.api
+  #   ...
+  #
+  # tcp:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.tcp
+  #   ...
+
+volumes:
+  timescale_data:
+  redis_data:
